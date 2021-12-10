@@ -28,14 +28,19 @@ def set_bold(command, noend: bool = False):
 
 class Shell:
 
-    def __init__(self, shell_mode: ShellMode = ShellMode.INTERACTIVE):
+    def __init__(self, shell_mode: ShellMode = ShellMode.INTERACTIVE, file_input: str = None):
         self.shell_mode = shell_mode
         self.current_directory = os.getcwd()
         self.current_user = os.getenv('USER')
         self.current_host = "pythonMysh"
         self.set_promp()
-        self.current_output = sys.stdout
-        self.current_error = sys.stderr
+        if file_input is None and shell_mode == ShellMode.BATCH:
+            raise ValueError("file_input cannot be None in batch mode")
+        self.file_input = file_input
+        self.default_output = sys.stdout
+        self.default_error = sys.stderr
+        self.current_output = self.default_output
+        self.current_error = self.default_error
 
     def set_promp(self):
         self.prompt = interactive_output(f"{self.current_user}@{self.current_host}", bcolors.OKGREEN, True) + ':' + interactive_output(self.current_directory, bcolors.OKBLUE, True) + "$ "
@@ -44,16 +49,22 @@ class Shell:
     def run(self):
         if self.shell_mode == ShellMode.INTERACTIVE:
             self.__run_interactive()
+        else:
+            self.__run_batch()
 
     def __run_interactive(self):
         while True:
             command = input(self.prompt)
-            if command == "exit":
-                exit(0)
-            elif command == "clear":
-                os.system("clear")
-            else:
-                result = self.__run_command(command)
+            result = self.__run_command(command)
+            if result is not None:
+                print(result, file=self.current_output)
+
+    def __run_batch(self):
+        with open(self.file_input, 'r') as file:
+            stderr_fileno = sys.stderr.fileno()
+            for line in file:
+                os.write(stderr_fileno, line.encode())
+                result = self.__run_command(line)
                 if result is not None:
                     print(result, file=self.current_output)
 
@@ -70,19 +81,25 @@ class Shell:
                 parsed_command[i] = tryget if tryget is not None else parsed_command[i]
         if len(parsed_command) == 0:
             return None
+        elif parsed_command[0] == 'exit':
+            if len(parsed_command) == 1:
+                exit(0)
+            elif parsed_command[1] == '1':
+                exit(1)
+            else:
+                exit(2)
         elif parsed_command[0] == "cd":
             return self.__run_cd(parsed_command)
         elif parsed_command[0] == "pwd":
             return os.getcwd()
-        elif parsed_command[0] == "read":
-            return self.__run_read(parsed_command)
-        elif parsed_command[0] == "export":
-            return self.__run_export(parsed_command)
         else:
             try:
+                parsed_command[0] = self.__which(parsed_command[0])
+                if parsed_command[0] is None:
+                    raise FileNotFoundError()
                 proc = subprocess.Popen(parsed_command, stdout=self.current_output, stderr=self.current_error, stdin=subprocess.PIPE)
                 proc.communicate()
-            except:
+            except Exception as e:
                 self.__run_error()
 
     def __split_command(self, command):
@@ -98,7 +115,7 @@ class Shell:
                 return None, None
         # No redirection
         elif len(output_to_file) == 1:
-            self.current_output = sys.stdout
+            self.current_output = self.default_output
             return self.__split_spaces(output_to_file[0])
         # Incorrect redirection
         else:
@@ -111,6 +128,24 @@ class Shell:
     def __run_error(self):
         err = "An error has occurred\n"
         print(err, file=sys.stderr)
+
+    def __which(self, command):
+
+        def is_exe(fpath):
+            return os.path.isfile(fpath) and os.access(fpath, os.X_OK)
+
+        fpath, fname = os.path.split(command)
+
+        if fpath:
+            if is_exe(command):
+                return command
+        else:
+            for path in os.environ["PATH"].split(os.pathsep):
+                path = path.strip('"')
+                exe_file = os.path.join(path, command)
+                if is_exe(exe_file):
+                    return exe_file
+        return None
 
     # Change directory
 

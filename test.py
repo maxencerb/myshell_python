@@ -13,4 +13,5 @@ import sys
 # print(proc.returncode)
 
 # os.system('[ read var ] && echo $var')
-print("Hello world")
+test = input()
+print(f"Hello world {test}")

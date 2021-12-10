@@ -1,0 +1,7 @@
+ls
+ls -l
+cat test.txt
+pwd
+pwd > result.txt
+exit
+echo test
