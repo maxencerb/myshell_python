@@ -98,11 +98,17 @@ class Shell:
                 if parsed_command[0] is None:
                     raise FileNotFoundError()
                 proc = subprocess.Popen(parsed_command, stdout=self.current_output, stderr=self.current_error, stdin=subprocess.PIPE)
-                proc.communicate()
+                if self.shell_mode == ShellMode.INTERACTIVE:
+                    proc.communicate()
+                else:
+                    proc.wait(timeout=10)
+                return proc.returncode
             except Exception as e:
                 self.__run_error()
 
-    def __split_command(self, command):
+    def __split_command(self, command: str):
+        # Remove all \n from command
+        command = command.replace('\n', '')
         output_to_file = command.split('>')
         # There is a redirection
         if len(output_to_file) == 2:
